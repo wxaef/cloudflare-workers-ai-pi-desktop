@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="pi-plugin-chrome" content="v2" />
+    <title>Cloudflare Workers AI</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #181818;
+        --surface: #212121;
+        --surface-hover: color-mix(in oklab, #ffffff 6%, transparent);
+        --fg: #ffffff;
+        --muted: color-mix(in oklab, #ffffff 52%, transparent);
+        --border: color-mix(in oklab, #ffffff 10%, transparent);
+        --accent: #f48120;
+        --danger: #ff7777;
+        --success: #78d9a3;
+      }
+      :root[data-base="light"] {
+        color-scheme: light;
+        --bg: #ffffff;
+        --surface: #f9f9f9;
+        --surface-hover: color-mix(in oklab, #1a1c1f 5%, transparent);
+        --fg: #1a1c1f;
+        --muted: #5d5d5d;
+        --border: color-mix(in oklab, #1a1c1f 10%, transparent);
+        --accent: #d66a0a;
+        --danger: #b42318;
+        --success: #137547;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: var(--pi-plugin-titlebar-height, 0px) 16px 20px;
+        overflow: auto;
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      main { max-width: 760px; margin: 0 auto; }
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 16px; }
+      h1 { margin: 0 0 4px; font-size: 20px; font-weight: 620; letter-spacing: -.02em; }
+      h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+      p { margin: 6px 0; color: var(--muted); }
+      .card { padding: 15px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+      .badge { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+      .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--muted); }
+      .dot.ok { background: var(--success); }
+      .dot.error { background: var(--danger); }
+      .field { display: grid; gap: 5px; margin: 11px 0; }
+      label { font-weight: 550; }
+      input, select {
+        width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 7px;
+        padding: 8px 10px; color: var(--fg); background: var(--bg); font: inherit;
+      }
+      input:focus, select:focus { outline: 2px solid color-mix(in oklab, var(--accent) 55%, transparent); outline-offset: 1px; }
+      .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+      .row code { flex: 1; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; font: 12px/1.5 Consolas, monospace; }
+      button {
+        flex-shrink: 0; border: 1px solid var(--border); border-radius: 7px; padding: 7px 11px;
+        color: var(--fg); background: var(--bg); cursor: pointer; font: inherit;
+      }
+      button.primary { border-color: var(--accent); color: #fff; background: var(--accent); }
+      button.danger { color: var(--danger); }
+      button:hover { background-color: var(--surface-hover); }
+      button.primary:hover { opacity: .88; background: var(--accent); }
+      button:disabled { opacity: .5; cursor: default; }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .actions button { margin: 0; }
+      .hint { font-size: 12px; }
+      #feedback { min-height: 22px; margin: 8px 0 0; color: var(--muted); }
+      #feedback.error { color: var(--danger); }
+      #feedback.success { color: var(--success); }
+      .model-name { color: var(--muted); font-size: 12px; }
+      .key-row { align-items: flex-start; }
+      @media (max-width: 460px) {
+        body { padding-right: 12px; padding-left: 12px; }
+        header { flex-direction: column; }
+        .row { align-items: stretch; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <div class="badge"><span id="status-dot" class="dot"></span><span id="service-status">正在检查本机桥接服务…</span></div>
+          <h1>Cloudflare Workers AI</h1>
+          <p>通过本机 OpenAI 兼容桥接接入 PI 模型设置。</p>
+        </div>
+        <button id="refresh-status" type="button">刷新状态</button>
+      </header>
+
+      <section class="card" aria-labelledby="credentials-title">
+        <h2 id="credentials-title">Cloudflare 账号</h2>
+        <div class="field">
+          <label for="account-id">Account ID</label>
+          <input id="account-id" autocomplete="off" spellcheck="false" placeholder="32 位 Account ID" />
+        </div>
+        <div class="field">
+          <label for="api-token">API Token</label>
+          <input id="api-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="填写 Workers AI API Token；已保存时留空可保留原 Token" />
+        </div>
+        <p class="hint">Token 仅保存在此插件的本机数据目录中，不会返回给面板，也不会写入日志。模型目录查询不会发起聊天推理请求。</p>
+        <div class="actions">
+          <button id="test-credentials" type="button">测试并读取模型</button>
+          <button id="save-credentials" class="primary" type="button">保存配置</button>
+          <button id="clear-credentials" class="danger" type="button">清除 Cloudflare 凭据</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="models-title">
+        <h2 id="models-title">Workers Free 可用模型</h2>
+        <p class="hint">过滤 Cloudflare 明确要求 Paid 计费的模型。Workers Free 仍受每天 10,000 Neurons 免费额度限制；工具调用能力取决于具体模型。</p>
+        <div class="field">
+          <label for="models">模型目录</label>
+          <select id="models" disabled><option value="">请先保存凭据并刷新模型</option></select>
+          <span id="model-description" class="model-name"></span>
+        </div>
+        <div class="field">
+          <label for="manual-model">手动模型 ID</label>
+          <input id="manual-model" autocomplete="off" spellcheck="false" placeholder="例如 @cf/meta/llama-3.1-8b-instruct" />
+        </div>
+        <p class="hint">手动输入不会过滤 Paid 专属模型；Free 计划调用此类模型仍会被 Cloudflare 拒绝。</p>
+        <div class="actions">
+          <button id="refresh-models" type="button">刷新模型目录</button>
+          <button id="copy-model" type="button">复制所选模型 ID</button>
+          <button id="copy-manual-model" type="button">复制手动模型 ID</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="pi-settings-title">
+        <h2 id="pi-settings-title">在 PI 模型设置中添加一次</h2>
+        <p>插件不会自动改写 PI 的模型配置。请在 PI → 设置 → 模型中添加 OpenAI 兼容的 Chat Completions 提供商。</p>
+        <div class="row"><span>API 类型</span><code>openai-completions</code></div>
+        <div class="row"><span>Base URL</span><code id="base-url">http://127.0.0.1:18766/v1</code><button type="button" data-copy="base-url">复制</button></div>
+        <div class="row key-row"><span>本地 API Key</span><code id="local-key">••••••••</code><button id="show-local-key" type="button">显示</button><button id="copy-local-key" type="button">复制</button></div>
+        <p class="hint">本地 API Key 与 Cloudflare Token 不同。它仅用于授权本机桥接，建议不要分享；清除 Cloudflare 凭据不会更换此 Key。</p>
+      </section>
+
+      <p id="feedback" role="status" aria-live="polite"></p>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let localKey = '';
+      let localKeyVisible = false;
+      let currentModels = [];
+
+      function setFeedback(message, kind = '') {
+        $('feedback').textContent = message;
+        $('feedback').className = kind;
+      }
+
+      async function invoke(channel, payload = {}) {
+        if (!window.pluginBridge?.invoke) throw new Error('PI 插件通信接口不可用，请在 PI-Desktop 插件面板中打开。');
+        const result = await window.pluginBridge.invoke(channel, payload);
+        if (!result?.ok && result?.error) throw new Error(result.error);
+        return result;
+      }
+
+      async function copyText(text) {
+        await window.pluginBridge.invoke('clipboard.writeText', { text });
+        setFeedback('已复制。', 'success');
+      }
+
+      function renderModels(items) {
+        currentModels = Array.isArray(items) ? items : [];
+        const select = $('models');
+        select.replaceChildren();
+        if (!currentModels.length) {
+          select.add(new Option('没有可显示的文本生成模型', ''));
+          select.disabled = true;
+          $('model-description').textContent = '';
+          return;
+        }
+        select.add(new Option('请选择模型…', ''));
+        for (const model of currentModels) {
+          const label = model.name && model.name !== model.id ? `${model.name} — ${model.id}` : model.id;
+          select.add(new Option(label, model.id));
+        }
+        select.disabled = false;
+      }
+      $('models').addEventListener('change', () => {
+        const selected = currentModels.find((item) => item.id === $('models').value);
+        $('model-description').textContent = selected?.description || '';
+      });
+
+      async function refreshStatus() {
+        const status = await invoke('cfai.status');
+        $('service-status').textContent = status.running
+          ? (status.configured ? '本机桥接服务运行中' : '服务运行中，等待 Cloudflare 配置')
+          : '本机桥接服务未运行';
+        $('status-dot').className = `dot ${status.running ? 'ok' : 'error'}`;
+        $('base-url').textContent = status.baseUrl || 'http://127.0.0.1:18766/v1';
+        if (status.accountId) $('account-id').value = status.accountId;
+        localKey = '';
+        $('local-key').textContent = status.localApiKeyPreview || '••••••••';
+        $('show-local-key').textContent = '显示';
+        localKeyVisible = false;
+        if (status.error) setFeedback(status.error, 'error');
+        return status;
+      }
+
+      async function loadModels(force = true) {
+        const result = await invoke('cfai.models', { force });
+        renderModels(result.models || []);
+        setFeedback(`已读取 ${currentModels.length} 个文本生成模型。`, 'success');
+      }
+
+      $('refresh-status').addEventListener('click', async () => {
+        try { await refreshStatus(); if (!$('feedback').textContent) setFeedback('状态已刷新。'); }
+        catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('test-credentials').addEventListener('click', async () => {
+        const button = $('test-credentials');
+        button.disabled = true;
+        setFeedback('正在验证账号并读取文本生成模型…');
+        try {
+          const result = await invoke('cfai.test', {
+            accountId: $('account-id').value.trim(),
+            apiToken: $('api-token').value,
+          });
+          renderModels(result.models || []);
+          setFeedback(`连接成功，找到 ${result.count} 个文本生成模型。此操作没有发起推理请求。`, 'success');
+        } catch (error) {
+          setFeedback(error.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      $('save-credentials').addEventListener('click', async () => {
+        const button = $('save-credentials');
+        button.disabled = true;
+        setFeedback('正在保存本机配置…');
+        try {
+          await invoke('cfai.save', {
+            accountId: $('account-id').value.trim(),
+            apiToken: $('api-token').value,
+          });
+          $('api-token').value = '';
+          await refreshStatus();
+          setFeedback('Cloudflare 配置已保存在本机。', 'success');
+        } catch (error) {
+          setFeedback(error.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      $('clear-credentials').addEventListener('click', async () => {
+        if (!window.confirm('清除本机保存的 Account ID 和 Cloudflare API Token？本地桥接 Key 会保留。')) return;
+        try {
+          await invoke('cfai.clear');
+          $('account-id').value = '';
+          $('api-token').value = '';
+          renderModels([]);
+          await refreshStatus();
+          setFeedback('Cloudflare 凭据已清除。', 'success');
+        } catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('refresh-models').addEventListener('click', async () => {
+        try { await loadModels(true); }
+        catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('copy-model').addEventListener('click', async () => {
+        if (!$('models').value) return setFeedback('请先选择模型。', 'error');
+        try { await copyText($('models').value); } catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('copy-manual-model').addEventListener('click', async () => {
+        const id = $('manual-model').value.trim();
+        if (!id) return setFeedback('请先填写模型 ID。', 'error');
+        try { await copyText(id); } catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('show-local-key').addEventListener('click', async () => {
+        try {
+          if (!localKey) localKey = (await invoke('cfai.localKey')).localApiKey;
+          localKeyVisible = !localKeyVisible;
+          $('local-key').textContent = localKeyVisible ? localKey : `${localKey.slice(0, 4)}••••${localKey.slice(-4)}`;
+          $('show-local-key').textContent = localKeyVisible ? '隐藏' : '显示';
+        } catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      $('copy-local-key').addEventListener('click', async () => {
+        try {
+          if (!localKey) localKey = (await invoke('cfai.localKey')).localApiKey;
+          await copyText(localKey);
+        } catch (error) { setFeedback(error.message, 'error'); }
+      });
+
+      document.querySelectorAll('button[data-copy]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try { await copyText($(button.dataset.copy).textContent.trim()); }
+          catch (error) { setFeedback(error.message, 'error'); }
+        });
+      });
+
+      const applyAppearance = (appearance) => {
+        const base = appearance?.base;
+        document.documentElement.dataset.base = base === 'light' || base === 'dark'
+          ? base
+          : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        if (typeof appearance?.locale === 'string' && appearance.locale) document.documentElement.lang = appearance.locale;
+      };
+      window.pluginBridge?.on('appearance:changed', applyAppearance);
+      window.pluginBridge?.invoke('app.getAppearance').then(applyAppearance).catch(() => applyAppearance(null));
+
+      (async () => {
+        try {
+          const status = await refreshStatus();
+          if (status.configured) await loadModels(false);
+        } catch (error) {
+          setFeedback(error.message, 'error');
+        }
+      })();
+    </script>
+  </body>
+</html>

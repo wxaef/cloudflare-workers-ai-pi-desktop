@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "community.cloudflare-workers-ai",
+  "name": "Cloudflare Workers AI",
+  "version": "0.1.2",
+  "description": "Connect PI-Desktop to Cloudflare Workers AI through a local OpenAI-compatible Chat Completions bridge.",
+  "main": "main.js",
+  "ui": {
+    "panel": "renderer/index.html",
+    "title": "Cloudflare Workers AI"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "cloudflare-workers-ai.open",
+        "title": "Cloudflare Workers AI: Open Panel",
+        "keywords": [
+          "cloudflare-workers-ai"
+        ]
+      }
+    ]
+  },
+  "permissions": [
+    "ui.panel",
+    "background.service",
+    "net.fetch",
+    "clipboard.write"
+  ],
+  "net": {
+    "domains": ["api.cloudflare.com"]
+  },
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": [
+    "onCommand:cloudflare-workers-ai.open",
+    "onStartup"
+  ]
+}
